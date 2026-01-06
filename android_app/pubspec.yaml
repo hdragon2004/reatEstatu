@@ -1,0 +1,81 @@
+name: android_app
+description: "A new Flutter project."
+
+publish_to: 'none'
+
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.0
+
+
+dependencies: 
+  flutter:
+    sdk: flutter
+
+  # The following adds the Cupertino Icons font to your application.
+  # Use with the CupertinoIcons class for iOS style icons.
+  cupertino_icons: ^1.0.8
+
+  # Permission handling
+  permission_handler: ^11.3.1
+
+  # Device and app information
+  package_info_plus: ^9.0.0
+
+  # Image picker for camera and gallery
+  image_picker: ^1.1.2
+
+  # Networking
+  dio: ^5.4.0
+  
+  # Environment variables
+  flutter_dotenv: ^5.1.0
+
+  # Secure Storage for authentication token
+  flutter_secure_storage: ^9.2.2
+  # Font Awesome Icons
+  font_awesome_flutter: ^10.12.0
+  
+  # UI Enhancement Libraries
+  google_fonts: ^6.2.1
+  flutter_animate: ^4.5.0
+  cached_network_image: ^3.4.1
+  shimmer: ^3.0.0
+  flutter_staggered_animations: ^1.1.1
+  flutter_svg: ^2.0.10+1
+  smooth_page_indicator: ^1.2.0+3
+  gap: ^3.0.1
+  url_launcher: ^6.3.0
+  intl: ^0.19.0
+  syncfusion_flutter_sliders: ^31.2.18
+  
+  # OpenStreetMap for FREE map display (NO Google Maps API needed)
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  
+  # Geolocation - Get user's current location
+  geolocator: ^13.0.1
+  
+  # SignalR for real-time notifications and messages
+  signalr_netcore: ^1.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+    
+  flutter_launcher_icons: ^0.13.1
+
+  flutter_lints: ^6.0.0
+
+
+flutter:
+
+  uses-material-design: true
+
+  # Assets
+  assets:
+    - assets/images/
+    - .env
+
