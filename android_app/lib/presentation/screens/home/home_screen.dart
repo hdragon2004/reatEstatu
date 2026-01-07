@@ -144,7 +144,8 @@ class _HomeScreenState extends State<HomeScreen> {
       
       if (savedCityName != null && savedCityName.isNotEmpty) {
         setState(() {
-          _selectedLocation = savedCityName;
+          // Hiển thị tên sau khi loại bỏ tiền tố hành chính (Tỉnh / Thành phố / TP)
+          _selectedLocation = _stripAdministrativePrefix(savedCityName);
           _selectedProvinceCode = savedProvinceCode;
         });
       } else {
@@ -176,11 +177,12 @@ class _HomeScreenState extends State<HomeScreen> {
       if (selectedProvince != null) {
         // Lưu lựa chọn bằng flutter_secure_storage để nhất quán
         const storage = FlutterSecureStorage();
-        await storage.write(key: 'selected_city_name', value: selectedProvince.name);
+        final displayName = _stripAdministrativePrefix(selectedProvince.name);
+        await storage.write(key: 'selected_city_name', value: displayName);
         await storage.write(key: 'selected_province_code', value: selectedProvince.code);
 
         setState(() {
-          _selectedLocation = selectedProvince.name;
+          _selectedLocation = displayName;
           _selectedProvinceCode = selectedProvince.code;
         });
 
@@ -269,6 +271,17 @@ class _HomeScreenState extends State<HomeScreen> {
         .replaceAll('Tỉnh', '')
         .trim()
         .toLowerCase();
+  }
+ 
+  /// Loại bỏ tiền tố hành chính trước khi hiển thị (ví dụ "Thành phố Hồ Chí Minh" -> "Hồ Chí Minh")
+  String _stripAdministrativePrefix(String cityName) {
+    var result = cityName ?? '';
+    // Loại bỏ các từ phổ biến ở đầu tên (không phân biệt hoa thường)
+    result = result.replaceFirst(RegExp(r'^\s*Thành phố\s+', caseSensitive: false), '');
+    result = result.replaceFirst(RegExp(r'^\s*Tỉnh\s+', caseSensitive: false), '');
+    result = result.replaceFirst(RegExp(r'^\s*TP\.\s*', caseSensitive: false), '');
+    result = result.replaceFirst(RegExp(r'^\s*TP\s+', caseSensitive: false), '');
+    return result.trim();
   }
 
   /// Lấy cityName từ post (ưu tiên cityName trực tiếp, fallback về nested data)
@@ -459,12 +472,20 @@ class _HomeScreenState extends State<HomeScreen> {
                   // Location name - Button để chọn vị trí
                   GestureDetector(
                     onTap: _showLocationPicker,
-                    child: Text(
-                      _selectedLocation,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                        fontSize: 13,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        // Giới hạn chiều rộng để tránh overflow khi tên vị trí quá dài
+                        maxWidth: MediaQuery.of(context).size.width * 0.5,
+                      ),
+                      child: Text(
+                        _selectedLocation,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                          fontSize: 13,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ),

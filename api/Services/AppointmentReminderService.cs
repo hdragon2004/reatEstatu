@@ -51,6 +51,7 @@ namespace RealEstateHubAPI.Services
             using var scope = _serviceProvider.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var appointmentService = scope.ServiceProvider.GetRequiredService<IAppointmentService>();
+            var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
 
             try
             {
@@ -68,22 +69,15 @@ namespace RealEstateHubAPI.Services
                 {
                     try
                     {
-                        // Tạo Notification record
-                        var notification = new Notification
-                        {
-                            UserId = appointment.UserId,
-                            PostId = appointment.PostId, // Appointment liên quan đến Post
-                            AppointmentId = appointment.Id, // FK đến Appointment
-                            SavedSearchId = null,
-                            MessageId = null,
-                            Title = "Nhắc lịch hẹn",
-                            Message = $"Bạn có lịch hẹn '{appointment.Title}' vào lúc {appointment.AppointmentTime:dd/MM/yyyy HH:mm}",
-                            Type = "Reminder", // Loại thông báo: Nhắc lịch hẹn
-                            CreatedAt = DateTimeHelper.GetVietnamNow(),
-                            IsRead = false
-                        };
-
-                        context.Notifications.Add(notification);
+                        // Gửi notification real-time qua NotificationService (tự tạo và lưu Notification)
+                        await notificationService.CreateAndSendNotificationAsync(
+                            appointment.UserId,
+                            "Nhắc lịch hẹn",
+                            $"Bạn có lịch hẹn '{appointment.Title}' vào lúc {appointment.AppointmentTime:dd/MM/yyyy HH:mm}",
+                            "Reminder",
+                            postId: appointment.PostId,
+                            appointmentId: appointment.Id
+                        );
 
                         // Đánh dấu appointment đã được nhắc
                         appointment.IsNotified = true;
@@ -91,23 +85,6 @@ namespace RealEstateHubAPI.Services
                         _logger.LogInformation(
                             $"Created reminder notification for Appointment {appointment.Id}, User {appointment.UserId}, " +
                             $"AppointmentTime: {appointment.AppointmentTime:yyyy-MM-dd HH:mm}");
-
-                        // Gửi notification real-time qua SignalR
-                        var notificationHub = scope.ServiceProvider.GetRequiredService<IHubContext<NotificationHub>>();
-                        await notificationHub.Clients.Group($"user_{appointment.UserId}").SendAsync("ReceiveNotification", new
-                        {
-                            Id = notification.Id,
-                            UserId = notification.UserId,
-                            PostId = notification.PostId,
-                            SavedSearchId = notification.SavedSearchId,
-                            AppointmentId = notification.AppointmentId,
-                            MessageId = notification.MessageId,
-                            Title = notification.Title,
-                            Message = notification.Message,
-                            Type = notification.Type,
-                            CreatedAt = notification.CreatedAt,
-                            IsRead = notification.IsRead
-                        });
 
                         // TODO: Tích hợp Firebase Cloud Messaging (FCM) sau này
                         // await _fcmService.SendNotificationAsync(appointment.UserId, notification);

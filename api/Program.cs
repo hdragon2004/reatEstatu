@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
+using System.Security.Claims;
 using RealEstateHubAPI.DTOs;
 using RealEstateHubAPI.Model;
 using RealEstateHubAPI.Models;
@@ -46,6 +47,9 @@ builder.Services.AddScoped<IMomoService, MomoService>();
 
 //Add Chat service
 builder.Services.AddScoped<IChatService, ChatService>();
+
+//Add Notification service
+builder.Services.AddScoped<INotificationService, NotificationService>();
 
 
 //builder.Services.AddScoped<IReportRepository, ReportRepository>();
@@ -125,11 +129,14 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 });
 
 builder.Services.AddHttpClient();
-// Configure SignalR với JWT authentication
+// Configure SignalR với JWT authentication và UserIdProvider
 builder.Services.AddSignalR(options =>
 {
     options.EnableDetailedErrors = true; // Chỉ bật trong development
 });
+
+// SignalR UserId Provider để hỗ trợ Clients.User()
+// Removed IUserIdProvider registration - using group-based delivery (user_{userId})
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddMemoryCache();
 builder.Services.AddSwaggerGen(c =>

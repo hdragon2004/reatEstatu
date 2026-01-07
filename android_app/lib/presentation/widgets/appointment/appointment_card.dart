@@ -12,6 +12,7 @@ class AppointmentCard extends StatelessWidget {
   final String status; // 'confirmed', 'pending', 'rejected'
   final VoidCallback? onConfirm;
   final VoidCallback? onReject;
+  final VoidCallback? onCancel;
   final VoidCallback? onNavigateToChat; // Callback để nhắn tin
   final VoidCallback? onViewPost; // Callback để xem chi tiết bài post
   final bool isFirstItem; // Item đầu tiên trong danh sách
@@ -22,6 +23,7 @@ class AppointmentCard extends StatelessWidget {
     required this.status,
     this.onConfirm,
     this.onReject,
+    this.onCancel,
     this.onNavigateToChat,
     this.onViewPost,
     this.isFirstItem = false,
@@ -346,6 +348,35 @@ class AppointmentCard extends StatelessWidget {
                           Icons.check,
                           size: 23,
                           color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+                // Nếu user là người tạo lịch hẹn (onCancel được truyền) hiển thị nút Hủy
+                if (onCancel != null) ...[
+                  const Gap(12),
+                  // Button Hủy giống style với nút Từ chối (circular red)
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: onCancel,
+                      borderRadius: BorderRadius.circular(23),
+                      child: Container(
+                        width: 45,
+                        height: 45,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: AppColors.error,
+                            width: 1.5,
+                          ),
+                          color: Colors.white,
+                        ),
+                        child: const Icon(
+                          Icons.close,
+                          size: 23,
+                          color: AppColors.error,
                         ),
                       ),
                     ),

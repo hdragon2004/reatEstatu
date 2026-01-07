@@ -7,6 +7,7 @@ using RealEstateHubAPI.Hubs;
 using RealEstateHubAPI.Model;
 using RealEstateHubAPI.Models;
 using RealEstateHubAPI.Utils;
+using RealEstateHubAPI.Services;
 using System;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Hosting;
@@ -25,6 +26,7 @@ namespace RealEstateHubAPI.Controllers
         private readonly ApplicationDbContext _context;
         private readonly IHubContext<MessageHub> _messageHub;
         private readonly IHubContext<NotificationHub> _notificationHub;
+        private readonly INotificationService _notificationService;
         private readonly ILogger<MessageController> _logger;
         private readonly IWebHostEnvironment _env;
 
@@ -32,12 +34,14 @@ namespace RealEstateHubAPI.Controllers
             ApplicationDbContext context,
             IHubContext<MessageHub> messageHub,
             IHubContext<NotificationHub> notificationHub,
+            INotificationService notificationService,
             ILogger<MessageController> logger,
             IWebHostEnvironment env)
         {
             _context = context;
             _messageHub = messageHub;
             _notificationHub = notificationHub;
+            _notificationService = notificationService;
             _logger = logger;
             _env = env;
         }
@@ -163,41 +167,18 @@ namespace RealEstateHubAPI.Controllers
                 // Gửi tin nhắn real-time qua SignalR đến người nhận
                 await _messageHub.Clients.Group($"user_{dto.ReceiverId}").SendAsync("ReceiveMessage", messageDto);
 
-                // Tạo notification cho người nhận
-                var notification = new Notification
-                {
-                    UserId = receiver.Id,
-                    PostId = dto.PostId,
-                    MessageId = message.Id, // FK đến Message
-                    AppointmentId = null,
-                    SavedSearchId = null,
-                    Title = "Tin nhắn mới",
-                    Message = post != null 
+                // Tạo và gửi notification real-time qua service tập trung
+                await _notificationService.CreateAndSendNotificationAsync(
+                    receiver.Id,
+                    "Tin nhắn mới",
+                    post != null
                         ? $"{sender.Name} đã gửi tin nhắn về bài đăng '{post.Title}'"
                         : $"{sender.Name} đã gửi tin nhắn cho bạn",
-                    Type = "Message",
-                    IsRead = false,
-                    CreatedAt = DateTimeHelper.GetVietnamNow() // Sử dụng DateTimeHelper để đảm bảo timezone đúng
-                };
-
-                _context.Notifications.Add(notification);
-                await _context.SaveChangesAsync();
-
-                // Gửi notification real-time qua SignalR
-                await _notificationHub.Clients.Group($"user_{receiver.Id}").SendAsync("ReceiveNotification", new
-                {
-                    Id = notification.Id,
-                    UserId = notification.UserId,
-                    PostId = notification.PostId,
-                    SavedSearchId = notification.SavedSearchId,
-                    AppointmentId = notification.AppointmentId,
-                    MessageId = notification.MessageId,
-                    Title = notification.Title,
-                    Message = notification.Message,
-                    Type = notification.Type,
-                    CreatedAt = notification.CreatedAt,
-                    IsRead = notification.IsRead
-                });
+                    "Message",
+                    postId: dto.PostId,
+                    messageId: message.Id,
+                    senderId: sender.Id
+                );
 
                 _logger.LogInformation($"Message {message.Id} sent from {senderId.Value} to {dto.ReceiverId}");
 

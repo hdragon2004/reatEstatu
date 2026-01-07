@@ -86,10 +86,17 @@ class NotificationService extends BaseService {
   }
 
   /// Xử lý thông báo nhận được từ SignalR
-  void _handleNotificationReceived(Map<String, dynamic> notificationData) {
+  Future<void> _handleNotificationReceived(Map<String, dynamic> notificationData) async {
     try {
       final notification = NotificationModel.fromJson(notificationData);
-      
+
+      // Lấy userId hiện tại để tránh hiển thị notification do chính user tạo ra
+      final currentUserId = await AuthStorageService.getUserId();
+      if (notification.senderId != null && currentUserId != null && notification.senderId == currentUserId) {
+        // Nếu notification do chính user gửi (senderId == currentUserId), bỏ qua để không hiển thị banner cho người gửi
+        return;
+      }
+
       final existingIndex = _notifications.indexWhere((n) => n.id == notification.id);
       if (existingIndex == -1) {
         // Chỉ thêm nếu chưa tồn tại

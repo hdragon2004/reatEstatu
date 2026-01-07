@@ -61,6 +61,7 @@ namespace RealEstateHubAPI.Controllers
                 }
 
                 var appointment = await _appointmentService.CreateAppointmentAsync(userId.Value, dto);
+                _logger.LogInformation($"User {userId.Value} created appointment {appointment.Id} for post {dto.PostId}");
                 return Created(appointment, "Tạo lịch hẹn thành công");
             }
             catch (ArgumentException ex)
@@ -185,9 +186,12 @@ namespace RealEstateHubAPI.Controllers
                     return UnauthorizedResponse("User ID not found in token");
                 }
 
+                _logger.LogInformation($"User {userId.Value} is trying to confirm appointment {id}");
+
                 var confirmed = await _appointmentService.ConfirmAppointmentAsync(id, userId.Value);
                 if (!confirmed)
                 {
+                    _logger.LogWarning($"User {userId.Value} failed to confirm appointment {id} - not found or access denied");
                     return NotFoundResponse("Appointment not found or access denied");
                 }
 
@@ -214,9 +218,12 @@ namespace RealEstateHubAPI.Controllers
                     return UnauthorizedResponse("User ID not found in token");
                 }
 
+                _logger.LogInformation($"User {userId.Value} is trying to reject appointment {id}");
+
                 var rejected = await _appointmentService.RejectAppointmentAsync(id, userId.Value);
                 if (!rejected)
                 {
+                    _logger.LogWarning($"User {userId.Value} failed to reject appointment {id} - not found or access denied");
                     return NotFoundResponse("Appointment not found or access denied");
                 }
 

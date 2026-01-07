@@ -55,5 +55,11 @@ class AppointmentService extends BaseService {
     // Endpoint trả về success với data = null (no payload). Cho phép null data để không throw ApiException.
     return unwrapResponse(response, allowNullData: true) ?? <String, dynamic>{};
   }
+
+  /// Hủy appointment (do người tạo hủy)
+  Future<Map<String, dynamic>> cancelAppointment(int appointmentId) async {
+    final response = await _appointmentRepository.cancelAppointment(appointmentId);
+    return unwrapResponse(response, allowNullData: true) ?? <String, dynamic>{};
+  }
 }
 

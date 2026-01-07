@@ -35,12 +35,15 @@ namespace RealEstateHubAPI.Hubs
             if (!string.IsNullOrEmpty(userId))
             {
                 // Thêm user vào group riêng của họ để có thể nhận notifications
-                await Groups.AddToGroupAsync(Context.ConnectionId, $"user_{userId}");
-                _logger.LogInformation($"User {userId} connected to NotificationHub with connection {Context.ConnectionId}");
+                var groupName = $"user_{userId}";
+                await Groups.AddToGroupAsync(Context.ConnectionId, groupName);
+                _logger.LogInformation($"[DEBUG] User {userId} connected to NotificationHub with connection {Context.ConnectionId}, added to group: {groupName}");
+                Console.WriteLine($"[DEBUG] User {userId} connected to NotificationHub, added to group: {groupName}");
             }
             else
             {
-                _logger.LogWarning($"User connected to NotificationHub but UserId not found in claims");
+                _logger.LogWarning($"[DEBUG] User connected to NotificationHub but UserId not found in claims");
+                Console.WriteLine($"[DEBUG] User connected to NotificationHub but UserId not found in claims");
             }
 
             await base.OnConnectedAsync();
@@ -54,13 +57,16 @@ namespace RealEstateHubAPI.Hubs
             var userId = GetUserId();
             if (!string.IsNullOrEmpty(userId))
             {
-                await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"user_{userId}");
-                _logger.LogInformation($"User {userId} disconnected from NotificationHub");
+                var groupName = $"user_{userId}";
+                await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupName);
+                _logger.LogInformation($"[DEBUG] User {userId} disconnected from NotificationHub, removed from group: {groupName}");
+                Console.WriteLine($"[DEBUG] User {userId} disconnected from NotificationHub, removed from group: {groupName}");
             }
 
             if (exception != null)
             {
-                _logger.LogError(exception, $"User {userId} disconnected with error");
+                _logger.LogError(exception, $"[DEBUG] User {userId} disconnected with error: {exception.Message}");
+                Console.WriteLine($"[DEBUG] User {userId} disconnected with error: {exception.Message}");
             }
 
             await base.OnDisconnectedAsync(exception);

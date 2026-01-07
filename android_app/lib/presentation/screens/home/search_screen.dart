@@ -597,7 +597,7 @@ class SearchScreenState extends State<SearchScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${_results.length} Results',
+                    '${_results.length} Kết quả',
                     style: AppTextStyles.h5.copyWith(
                       fontWeight: FontWeight.bold,
                       color: AppColors.textPrimary,
@@ -605,7 +605,7 @@ class SearchScreenState extends State<SearchScreen> {
                   ),
                   const Gap(4),
                   Text(
-                    "Showing '$_sortBy' results",
+                    "Hiển thị kết quả '$_sortBy'",
                     style: AppTextStyles.bodySmall.copyWith(
                       color: AppColors.textSecondary,
                     ),

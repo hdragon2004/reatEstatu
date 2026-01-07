@@ -70,4 +70,12 @@ class AppointmentRepository extends BaseRepository {
       fromJson: (json) => Map<String, dynamic>.from(json),
     );
   }
+
+  /// Hủy appointment (do người tạo hủy)
+  Future<ApiResponse<Map<String, dynamic>>> cancelAppointment(int appointmentId) async {
+    return await handleRequestWithResponse<Map<String, dynamic>>(
+      request: () => apiClient.put('${ApiConstants.appointments}/$appointmentId/cancel'),
+      fromJson: (json) => Map<String, dynamic>.from(json),
+    );
+  }
 }

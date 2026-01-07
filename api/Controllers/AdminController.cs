@@ -11,6 +11,7 @@ using RealEstateHubAPI.seeds;
 using RealEstateHubAPI.Services;
 using RealEstateHubAPI.Utils;
 using Microsoft.Extensions.Logging;
+using RealEstateHubAPI.Services;
 
 namespace RealEstateHubAPI.Controllers
 {
@@ -25,16 +26,18 @@ namespace RealEstateHubAPI.Controllers
         private readonly ILocationRepository _locationRepository;
         private readonly IHubContext<NotificationHub> _hubContext;
         private readonly ISavedSearchService? _savedSearchService;
+        private readonly INotificationService _notificationService;
         private readonly ILogger<AdminController> _logger;
         
         //private readonly IEmailService _emailService;
 
         public AdminController(
-            ApplicationDbContext context, 
-            ICategoryRepository categoryRepository, 
+            ApplicationDbContext context,
+            ICategoryRepository categoryRepository,
             IUserRepository userRepository,
-            ILocationRepository locationRepository, 
+            ILocationRepository locationRepository,
             IHubContext<NotificationHub> hubContext,
+            INotificationService notificationService,
             ISavedSearchService? savedSearchService = null,
             ILogger<AdminController>? logger = null)
         {
@@ -43,6 +46,7 @@ namespace RealEstateHubAPI.Controllers
             _userRepository = userRepository;
             _locationRepository = locationRepository;
             _hubContext = hubContext;
+            _notificationService = notificationService;
             _savedSearchService = savedSearchService;
             _logger = logger;
             //_emailService = emailService;
@@ -111,38 +115,14 @@ namespace RealEstateHubAPI.Controllers
             
             await _context.SaveChangesAsync();
 
-            
-            var notification = new Notification
-            {
-                UserId = post.User.Id,
-                PostId = post.Id,
-                AppointmentId = null,
-                MessageId = null,
-                SavedSearchId = null,
-                Title = "Tin đăng đã được duyệt",
-                Message = $"Tin đăng '{post.Title}' của bạn đã được admin duyệt thành công.",
-                Type = "approved",
-                IsRead = false,
-                CreatedAt = DateTimeHelper.GetVietnamNow()
-            };
-            _context.Notifications.Add(notification);
-            await _context.SaveChangesAsync();
-
-            // Gửi notification real-time qua SignalR
-            await _hubContext.Clients.User(post.User.Id.ToString()).SendAsync("ReceiveNotification", new
-            {
-                Id = notification.Id,
-                UserId = notification.UserId,
-                PostId = notification.PostId,
-                SavedSearchId = notification.SavedSearchId,
-                AppointmentId = notification.AppointmentId,
-                MessageId = notification.MessageId,
-                Title = notification.Title,
-                Message = notification.Message,
-                Type = notification.Type,
-                CreatedAt = notification.CreatedAt,
-                IsRead = notification.IsRead
-            });
+            // Tạo và gửi thông báo real-time qua service tập trung
+            await _notificationService.CreateAndSendNotificationAsync(
+                post.User.Id,
+                "Tin đăng đã được duyệt",
+                $"Tin đăng '{post.Title}' của bạn đã được admin duyệt thành công.",
+                "approved",
+                postId: post.Id
+            );
 
             // Kiểm tra và tạo thông báo cho SavedSearch nếu post có tọa độ
             if (post.Latitude != null && post.Longitude != null && _savedSearchService != null)
@@ -157,8 +137,6 @@ namespace RealEstateHubAPI.Controllers
                     // Không throw exception để không ảnh hưởng đến việc approve post
                 }
             }
-            
-            await _hubContext.Clients.User(post.User.Id.ToString()).SendAsync("ReceiveNotification", notification);
 
             
             //await _emailService.SendAsync(post.User.Email, notification.Title, notification.Message);
@@ -216,41 +194,17 @@ namespace RealEstateHubAPI.Controllers
             // Soft delete: Đánh dấu bài viết là "Rejected" thay vì xóa khỏi database
             post.Status = "Rejected";
             post.IsApproved = false; // Giữ lại để tương thích ngược
-            
-            await _context.SaveChangesAsync();
-            
-            // Tạo thông báo cho user biết bài viết bị từ chối
-            var notification = new Notification
-            {
-                UserId = post.UserId,
-                PostId = post.Id,
-                AppointmentId = null,
-                MessageId = null,
-                SavedSearchId = null,
-                Title = "Tin đăng bị từ chối",
-                Message = $"Tin đăng '{post.Title}' của bạn đã bị từ chối bởi admin.",
-                Type = "PostRejected",
-                IsRead = false,
-                CreatedAt = DateTimeHelper.GetVietnamNow()
-            };
-            _context.Notifications.Add(notification);
+
             await _context.SaveChangesAsync();
 
-            // Gửi notification real-time qua SignalR
-            await _hubContext.Clients.User(post.UserId.ToString()).SendAsync("ReceiveNotification", new
-            {
-                Id = notification.Id,
-                UserId = notification.UserId,
-                PostId = notification.PostId,
-                SavedSearchId = notification.SavedSearchId,
-                AppointmentId = notification.AppointmentId,
-                MessageId = notification.MessageId,
-                Title = notification.Title,
-                Message = notification.Message,
-                Type = notification.Type,
-                CreatedAt = notification.CreatedAt,
-                IsRead = notification.IsRead
-            });
+            // Tạo và gửi thông báo real-time qua service tập trung
+            await _notificationService.CreateAndSendNotificationAsync(
+                post.UserId,
+                "Tin đăng bị từ chối",
+                $"Tin đăng '{post.Title}' của bạn đã bị từ chối bởi admin.",
+                "PostRejected",
+                postId: post.Id
+            );
 
             return Success(new { message = "Bài viết đã được đánh dấu là từ chối", postId = postId }, "Từ chối bài đăng thành công");
         }

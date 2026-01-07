@@ -297,6 +297,81 @@ class _AppointmentsListScreenState extends State<AppointmentsListScreen>
     }
   }
 
+  Future<void> _cancelAppointment(int appointmentId) async {
+    // Xác nhận trước khi hủy
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Text('Hủy lịch hẹn', style: AppTextStyles.h6),
+        content: Text(
+          'Bạn có chắc chắn muốn hủy lịch hẹn này?',
+          style: AppTextStyles.bodyMedium,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Hủy', style: AppTextStyles.labelLarge),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              'Hủy lịch',
+              style: AppTextStyles.labelLarge.copyWith(
+                color: AppColors.error,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final currentAppointment = _allAppointments.firstWhere(
+        (app) => (app['id'] is int ? app['id'] : int.tryParse(app['id'].toString())) == appointmentId,
+        orElse: () => {},
+      );
+
+      if (currentAppointment.isNotEmpty && _getStatus(currentAppointment) == 'REJECTED') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Lịch hẹn này đã bị hủy/từ chối'),
+              backgroundColor: AppColors.warning,
+            ),
+          );
+        }
+        return;
+      }
+
+      await _appointmentService.cancelAppointment(appointmentId);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Đã hủy lịch hẹn'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        _postOwnershipCache.clear();
+        _loadAppointments();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi hủy lịch hẹn: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
   /// Lấy status của appointment
   String _getStatus(Map<String, dynamic> appointment) {
     // Thử cả camelCase và PascalCase vì API có thể trả về một trong hai
@@ -674,6 +749,12 @@ class _AppointmentsListScreenState extends State<AppointmentsListScreen>
 
         final isFirstItem = index == 0;
         
+        // Determine if current user created this appointment
+        final appointmentUserId = appointment['userId'] is int
+            ? appointment['userId']
+            : int.tryParse(appointment['userId'].toString());
+        final isCreatedByUser = appointmentUserId != null && appointmentUserId == _currentUserId;
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -690,6 +771,9 @@ class _AppointmentsListScreenState extends State<AppointmentsListScreen>
                       _getStatus(appointment) == 'PENDING' &&
                       canManage
                   ? () => _rejectAppointment(appointment['id'] as int)
+                  : null,
+              onCancel: isCreatedByUser && _getStatus(appointment) != 'REJECTED'
+                  ? () => _cancelAppointment(appointment['id'] as int)
                   : null,
               onNavigateToChat: postId != null
                   ? () => _navigateToChat(appointment)

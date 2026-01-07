@@ -6,6 +6,7 @@ using RealEstateHubAPI.Models;
 using RealEstateHubAPI.Utils;
 using Microsoft.AspNetCore.SignalR;
 using RealEstateHubAPI.Hubs;
+using RealEstateHubAPI.Services;
 
 namespace RealEstateHubAPI.Services
 {
@@ -15,14 +16,17 @@ namespace RealEstateHubAPI.Services
         private readonly ApplicationDbContext _context;
         private readonly ILogger<SavedSearchService> _logger;
         private readonly IHubContext<NotificationHub>? _hubContext;
+        private readonly INotificationService _notificationService;
 
         public SavedSearchService(
             ApplicationDbContext context,
             ILogger<SavedSearchService> logger,
+            INotificationService notificationService,
             IHubContext<NotificationHub>? hubContext = null)
         {
             _context = context;
             _logger = logger;
+            _notificationService = notificationService;
             _hubContext = hubContext;
         }
 
@@ -190,61 +194,18 @@ namespace RealEstateHubAPI.Services
 
                     if (existingNotification == null)
                     {
-                        // Tạo thông báo mới (sử dụng Notification chung, phân loại bằng Type = NotificationType.SavedSearch)
-                        var notification = new Notification
-                        {
-                            UserId = savedSearch.UserId,
-                            PostId = postId,
-                            SavedSearchId = savedSearch.Id, // Metadata để biết SavedSearch nào trigger và tránh duplicate
-                            AppointmentId = null,
-                            MessageId = null,
-                            Title = "Bài đăng mới trong khu vực quan tâm",
-                            Message = $"Có bài đăng mới phù hợp với khu vực tìm kiếm của bạn: {post.Title}",
-                            Type = "SavedSearch",
-                            CreatedAt = DateTimeHelper.GetVietnamNow(),
-                            IsRead = false
-                        };
+                        // Tạo và gửi thông báo real-time qua service tập trung
+                        await _notificationService.CreateAndSendNotificationAsync(
+                            savedSearch.UserId,
+                            "Bài đăng mới trong khu vực quan tâm",
+                            $"Có bài đăng mới phù hợp với khu vực tìm kiếm của bạn: {post.Title}",
+                            "SavedSearch",
+                            postId: postId,
+                            savedSearchId: savedSearch.Id
+                        );
 
-                        _context.Notifications.Add(notification);
-
-                        // Save immediately to obtain generated Id so we can send real-time payload with Id
-                        try
-                        {
-                            await _context.SaveChangesAsync();
-
-                            _logger.LogInformation(
-                                $"Created SavedSearch notification (Id={notification.Id}) for SavedSearch {savedSearch.Id}, Post {postId}, User {savedSearch.UserId}");
-
-                            // Send real-time notification via SignalR to the user group (if hub available)
-                            if (_hubContext != null)
-                            {
-                                try
-                                {
-                                    await _hubContext.Clients.Group($"user_{savedSearch.UserId}").SendAsync("ReceiveNotification", new
-                                    {
-                                        Id = notification.Id,
-                                        UserId = notification.UserId,
-                                        PostId = notification.PostId,
-                                        SavedSearchId = notification.SavedSearchId,
-                                        AppointmentId = notification.AppointmentId,
-                                        MessageId = notification.MessageId,
-                                        Title = notification.Title,
-                                        Message = notification.Message,
-                                        Type = notification.Type,
-                                        CreatedAt = notification.CreatedAt,
-                                        IsRead = notification.IsRead
-                                    });
-                                }
-                                catch (Exception ex)
-                                {
-                                    _logger.LogError(ex, $"Error sending SignalR notification to user {savedSearch.UserId} for SavedSearch {savedSearch.Id}");
-                                }
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, $"Error saving SavedSearch notification for SavedSearch {savedSearch.Id}, Post {postId}, User {savedSearch.UserId}");
-                        }
+                        _logger.LogInformation(
+                            $"Created SavedSearch notification for SavedSearch {savedSearch.Id}, Post {postId}, User {savedSearch.UserId}");
                     }
                 }
             }

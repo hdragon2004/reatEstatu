@@ -6,6 +6,7 @@ using RealEstateHubAPI.Hubs;
 using RealEstateHubAPI.Model;
 using RealEstateHubAPI.Models;
 using RealEstateHubAPI.Utils;
+using RealEstateHubAPI.Services;
 
 namespace RealEstateHubAPI.Services
 {
@@ -14,14 +15,17 @@ namespace RealEstateHubAPI.Services
         private readonly ApplicationDbContext _context;
         private readonly ILogger<AppointmentService> _logger;
         private readonly IHubContext<NotificationHub>? _notificationHub;
+        private readonly INotificationService _notificationService;
 
         public AppointmentService(
             ApplicationDbContext context,
             ILogger<AppointmentService> logger,
+            INotificationService notificationService,
             IHubContext<NotificationHub>? notificationHub = null)
         {
             _context = context;
             _logger = logger;
+            _notificationService = notificationService;
             _notificationHub = notificationHub;
         }
 
@@ -78,46 +82,33 @@ namespace RealEstateHubAPI.Services
 
             // Gửi thông báo cho chủ bài post (post.UserId) để chấp nhận lịch hẹn
             var postOwnerId = post.UserId;
+            Console.WriteLine($"[DEBUG] Creating appointment {appointment.Id} - Creator: {userId}, PostOwner: {postOwnerId}");
+
             // Nếu người tạo lịch hẹn chính là chủ bài (ví dụ user tự tạo cho chính mình), không cần gửi notification cho chính họ
             if (postOwnerId != userId)
             {
-                var notification = new Notification
-                {
-                    UserId = postOwnerId, // Gửi cho chủ bài post
-                    PostId = dto.PostId,
-                    AppointmentId = appointment.Id,
-                    SavedSearchId = null,
-                    MessageId = null,
-                    SenderId = userId, // User tạo appointment (để có thể nhắn tin)
-                    Title = "Yêu cầu lịch hẹn mới",
-                    Message = $"Bạn có yêu cầu lịch hẹn '{dto.Title}' vào lúc {dto.AppointmentTime:dd/MM/yyyy HH:mm}. Vui lòng chấp nhận hoặc từ chối.",
-                    Type = "AppointmentRequest",
-                    CreatedAt = DateTimeHelper.GetVietnamNow(),
-                    IsRead = false
-                };
+                // Lấy thông tin người tạo lịch hẹn (user A)
+                var appointmentCreator = await _context.Users.FindAsync(userId);
 
-                _context.Notifications.Add(notification);
-                await _context.SaveChangesAsync();
+                // Tạo và gửi thông báo real-time qua service tập trung
+                var creatorName = appointmentCreator?.Name ?? "người dùng";
+                var requestMessage = $"Bạn có yêu cầu lịch hẹn từ {creatorName} cho bài viết '{post.Title}' vào lúc {dto.AppointmentTime:dd/MM/yyyy HH:mm}. Vui lòng chấp nhận hoặc từ chối.";
+                Console.WriteLine($"[DEBUG] Sending AppointmentRequest notification to postOwner {postOwnerId}");
 
-                // Gửi notification real-time qua SignalR
-                if (_notificationHub != null)
-                {
-                    await _notificationHub.Clients.Group($"user_{postOwnerId}").SendAsync("ReceiveNotification", new
-                    {
-                        Id = notification.Id,
-                        UserId = notification.UserId,
-                        PostId = notification.PostId,
-                        SavedSearchId = notification.SavedSearchId,
-                        AppointmentId = notification.AppointmentId,
-                        MessageId = notification.MessageId,
-                        SenderId = notification.SenderId, // User tạo appointment
-                        Title = notification.Title,
-                        Message = notification.Message,
-                        Type = notification.Type,
-                        CreatedAt = notification.CreatedAt,
-                        IsRead = notification.IsRead
-                    });
-                }
+                await _notificationService.CreateAndSendNotificationAsync(
+                    postOwnerId, // Gửi cho chủ bài post (user B)
+                    "Yêu cầu lịch hẹn mới",
+                    requestMessage,
+                    "AppointmentRequest",
+                    postId: dto.PostId,
+                    appointmentId: appointment.Id,
+                    messageId: null,
+                    senderId: userId
+                );
+            }
+            else
+            {
+                Console.WriteLine($"[DEBUG] Skipping notification - creator {userId} is same as postOwner {postOwnerId}");
             }
 
             return MapToDto(appointment);
@@ -165,6 +156,7 @@ namespace RealEstateHubAPI.Services
         public async Task<bool> CancelAppointmentAsync(int appointmentId, int userId)
         {
             var appointment = await _context.Appointments
+                .Include(a => a.Post)
                 .FirstOrDefaultAsync(a => a.Id == appointmentId && a.UserId == userId);
 
             if (appointment == null)
@@ -175,23 +167,39 @@ namespace RealEstateHubAPI.Services
             appointment.Status = AppointmentStatus.REJECTED;
             await _context.SaveChangesAsync();
 
+            // Gửi thông báo cho post owner (user B) rằng lịch hẹn đã bị hủy (kèm senderId)
+            await _notificationService.CreateAndSendNotificationAsync(
+                appointment.Post.UserId, // Gửi cho user B (chủ bài đăng)
+                "Lịch hẹn đã bị hủy",
+                $"Lịch hẹn '{appointment.Title}' vào lúc {appointment.AppointmentTime:dd/MM/yyyy HH:mm} đã bị hủy bởi người tạo.",
+                "AppointmentRejected",
+                postId: appointment.PostId,
+                appointmentId: appointment.Id,
+                senderId: userId
+            );
+
             _logger.LogInformation($"Canceled Appointment {appointmentId} for User {userId}");
 
             return true;
         }
 
-        public async Task<bool> ConfirmAppointmentAsync(int appointmentId, int postOwnerId)
+        public async Task<bool> ConfirmAppointmentAsync(int appointmentId, int callerUserId)
         {
             var appointment = await _context.Appointments
                 .Include(a => a.Post)
                 .Include(a => a.User)
-                .FirstOrDefaultAsync(a => a.Id == appointmentId && 
-                                         a.Post != null && 
-                                         a.Post.UserId == postOwnerId &&
+                .FirstOrDefaultAsync(a => a.Id == appointmentId &&
                                          a.Status == AppointmentStatus.PENDING);
 
             if (appointment == null)
             {
+                return false;
+            }
+
+            // Chỉ post owner mới có quyền confirm appointment
+            if (appointment.Post.UserId != callerUserId)
+            {
+                _logger.LogWarning($"User {callerUserId} tried to confirm appointment {appointmentId} but is not the post owner");
                 return false;
             }
 
@@ -199,55 +207,29 @@ namespace RealEstateHubAPI.Services
             await _context.SaveChangesAsync();
 
             // Gửi thông báo cho user đã tạo appointment (appointment.UserId) rằng lịch hẹn đã được chấp nhận
-            var notification = new Notification
-            {
-                UserId = appointment.UserId,
-                PostId = appointment.PostId,
-                AppointmentId = appointment.Id,
-                SavedSearchId = null,
-                MessageId = null,
-                Title = "Lịch hẹn đã được chấp nhận",
-                Message = $"Lịch hẹn '{appointment.Title}' vào lúc {appointment.AppointmentTime:dd/MM/yyyy HH:mm} đã được chấp nhận.",
-                Type = "AppointmentConfirmed",
-                CreatedAt = DateTimeHelper.GetVietnamNow(),
-                IsRead = false
-            };
+            Console.WriteLine($"[DEBUG] Sending AppointmentConfirmed notification to appointment creator {appointment.UserId}");
 
-            _context.Notifications.Add(notification);
-            await _context.SaveChangesAsync();
+            await _notificationService.CreateAndSendNotificationAsync(
+                appointment.UserId, // Gửi cho user A (người tạo lịch hẹn)
+                "Lịch hẹn đã được chấp nhận",
+                $"Lịch hẹn '{appointment.Title}' vào lúc {appointment.AppointmentTime:dd/MM/yyyy HH:mm} đã được chấp nhận.",
+                "AppointmentConfirmed",
+                postId: appointment.PostId,
+                appointmentId: appointment.Id,
+                senderId: callerUserId
+            );
 
-            // Gửi notification real-time qua SignalR
-            if (_notificationHub != null)
-            {
-                await _notificationHub.Clients.Group($"user_{appointment.UserId}").SendAsync("ReceiveNotification", new
-                {
-                    Id = notification.Id,
-                    UserId = notification.UserId,
-                    PostId = notification.PostId,
-                    SavedSearchId = notification.SavedSearchId,
-                    AppointmentId = notification.AppointmentId,
-                    MessageId = notification.MessageId,
-                    Title = notification.Title,
-                    Message = notification.Message,
-                    Type = notification.Type,
-                    CreatedAt = notification.CreatedAt,
-                    IsRead = notification.IsRead
-                });
-            }
-
-            _logger.LogInformation($"Confirmed Appointment {appointmentId} by PostOwner {postOwnerId}");
+            _logger.LogInformation($"Confirmed Appointment {appointmentId} by PostOwner {callerUserId}");
 
             return true;
         }
 
-        public async Task<bool> RejectAppointmentAsync(int appointmentId, int postOwnerId)
+        public async Task<bool> RejectAppointmentAsync(int appointmentId, int callerUserId)
         {
             var appointment = await _context.Appointments
                 .Include(a => a.Post)
                 .Include(a => a.User)
-                .FirstOrDefaultAsync(a => a.Id == appointmentId && 
-                                         a.Post != null && 
-                                         a.Post.UserId == postOwnerId &&
+                .FirstOrDefaultAsync(a => a.Id == appointmentId &&
                                          a.Status == AppointmentStatus.PENDING);
 
             if (appointment == null)
@@ -255,47 +237,30 @@ namespace RealEstateHubAPI.Services
                 return false;
             }
 
+            // Cho phép cả post owner và appointment creator reject/cancel appointment
+            if (appointment.Post.UserId != callerUserId && appointment.UserId != callerUserId)
+            {
+                _logger.LogWarning($"User {callerUserId} tried to reject appointment {appointmentId} but is not authorized");
+                return false;
+            }
+
             appointment.Status = AppointmentStatus.REJECTED;
             await _context.SaveChangesAsync();
 
-            // Gửi thông báo cho user đã tạo appointment (appointment.UserId) rằng lịch hẹn đã bị từ chối
-            var notification = new Notification
-            {
-                UserId = appointment.UserId,
-                PostId = appointment.PostId,
-                AppointmentId = appointment.Id,
-                SavedSearchId = null,
-                MessageId = null,
-                Title = "Lịch hẹn đã bị từ chối",
-                Message = $"Lịch hẹn '{appointment.Title}' vào lúc {appointment.AppointmentTime:dd/MM/yyyy HH:mm} đã bị từ chối.",
-                Type = "AppointmentRejected",
-                CreatedAt = DateTimeHelper.GetVietnamNow(),
-                IsRead = false
-            };
+            // Luôn gửi thông báo cho appointment creator (user A), bất kể ai gọi API reject
+            Console.WriteLine($"[DEBUG] Sending AppointmentRejected notification to appointment creator {appointment.UserId}");
 
-            _context.Notifications.Add(notification);
-            await _context.SaveChangesAsync();
+            await _notificationService.CreateAndSendNotificationAsync(
+                appointment.UserId, // Luôn gửi cho user A (người tạo lịch hẹn)
+                "Lịch hẹn đã bị từ chối",
+                $"Lịch hẹn '{appointment.Title}' vào lúc {appointment.AppointmentTime:dd/MM/yyyy HH:mm} đã bị từ chối.",
+                "AppointmentRejected",
+                postId: appointment.PostId,
+                appointmentId: appointment.Id,
+                senderId: callerUserId
+            );
 
-            // Gửi notification real-time qua SignalR
-            if (_notificationHub != null)
-            {
-                await _notificationHub.Clients.Group($"user_{appointment.UserId}").SendAsync("ReceiveNotification", new
-                {
-                    Id = notification.Id,
-                    UserId = notification.UserId,
-                    PostId = notification.PostId,
-                    SavedSearchId = notification.SavedSearchId,
-                    AppointmentId = notification.AppointmentId,
-                    MessageId = notification.MessageId,
-                    Title = notification.Title,
-                    Message = notification.Message,
-                    Type = notification.Type,
-                    CreatedAt = notification.CreatedAt,
-                    IsRead = notification.IsRead
-                });
-            }
-
-            _logger.LogInformation($"Rejected Appointment {appointmentId} by PostOwner {postOwnerId}");
+            _logger.LogInformation($"Rejected Appointment {appointmentId} by User {callerUserId}");
 
             return true;
         }

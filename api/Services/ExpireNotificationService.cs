@@ -60,7 +60,7 @@ public class ExpireNotificationService : BackgroundService
                         };
                         context.Notifications.Add(notification);
                         await context.SaveChangesAsync();
-                        await hub.Clients.User(post.UserId.ToString()).SendAsync("ReceiveNotification", notification);
+                        await hub.Clients.Group($"user_{post.UserId}").SendAsync("ReceiveNotification", notification);
                     }
                 }
 
@@ -94,7 +94,7 @@ public class ExpireNotificationService : BackgroundService
                         };
                         context.Notifications.Add(notification);
                         await context.SaveChangesAsync();
-                        await hub.Clients.User(post.UserId.ToString()).SendAsync("ReceiveNotification", notification);
+                                await hub.Clients.Group($"user_{post.UserId}").SendAsync("ReceiveNotification", notification);
                     }
                 }
             }
